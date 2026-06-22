@@ -1,26 +1,45 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreatePermissionDto } from './dto/create-permission.dto';
 import { UpdatePermissionDto } from './dto/update-permission.dto';
 
 @Injectable()
 export class PermissionService {
+  constructor(private readonly prisma: PrismaService) {}
+
   create(createPermissionDto: CreatePermissionDto) {
-    return 'This action adds a new permission';
+    return this.prisma.permission.create({
+      data: createPermissionDto,
+    });
   }
 
   findAll() {
-    return `This action returns all permission`;
+    return this.prisma.permission.findMany({
+      orderBy: { id: 'asc' },
+    });
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} permission`;
+  async findOne(id: number) {
+    const permission = await this.prisma.permission.findUnique({
+      where: { id },
+    });
+    if (!permission) {
+      throw new NotFoundException(`ID为${id}的权限不存在`);
+    }
+    return permission;
   }
 
-  update(id: number, updatePermissionDto: UpdatePermissionDto) {
-    return `This action updates a #${id} permission`;
+  async update(id: number, updatePermissionDto: UpdatePermissionDto) {
+    await this.findOne(id);
+    return this.prisma.permission.update({
+      where: { id },
+      data: updatePermissionDto,
+    });
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} permission`;
+  async remove(id: number) {
+    await this.findOne(id);
+    await this.prisma.permission.delete({ where: { id } });
+    return { message: '删除成功' };
   }
 }

@@ -1,34 +1,53 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class RoleService {
   constructor(private readonly prisma: PrismaService) {}
+
   create(createRoleDto: CreateRoleDto) {
-    return 'This action adds a new role';
+    return this.prisma.role.create({
+      data: createRoleDto,
+    });
   }
 
   findAll() {
-    return `This action returns all role`;
+    return this.prisma.role.findMany({
+      include: { permissions: true },
+      orderBy: { id: 'asc' },
+    });
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} role`;
+  async findOne(id: number) {
+    const role = await this.prisma.role.findUnique({
+      where: { id },
+      include: { permissions: true },
+    });
+    if (!role) {
+      throw new NotFoundException(`ID为${id}的角色不存在`);
+    }
+    return role;
   }
 
-  update(id: number, updateRoleDto: UpdateRoleDto) {
-    return `This action updates a #${id} role`;
+  async update(id: number, updateRoleDto: UpdateRoleDto) {
+    await this.findOne(id);
+    return this.prisma.role.update({
+      where: { id },
+      data: updateRoleDto,
+      include: { permissions: true },
+    });
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} role`;
+  async remove(id: number) {
+    await this.findOne(id);
+    await this.prisma.role.delete({ where: { id } });
+    return { message: '删除成功' };
   }
 
-  // 给角色分配权限（覆盖式分配）
-  // 给角色分配权限（覆盖式分配）
   async assignPermissions(roleId: number, permissionIds: number[]) {
+    await this.findOne(roleId);
     return this.prisma.role.update({
       where: { id: roleId },
       data: {

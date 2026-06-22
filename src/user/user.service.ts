@@ -37,8 +37,9 @@ export class UserService {
     });
   }
 
-  // 给用户分配角色（覆盖式分配）
+  // 给用户分配角色（覆盖式）
   async assignRoles(userId: number, roleIds: number[]) {
+    await this.findOne(userId);
     return this.prisma.user.update({
       where: { id: userId },
       data: {

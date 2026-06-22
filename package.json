@@ -5,6 +5,9 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -20,7 +23,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "prisma:dev": "cross-env NODE_ENV=development prisma migrate dev",
     "prisma:prod": "cross-env NODE_ENV=production prisma migrate deploy",
-    "prisma:studio:dev": "cross-env NODE_ENV=development prisma studio"
+    "prisma:studio:dev": "cross-env NODE_ENV=development prisma studio",
+    "seed": "prisma db seed"
   },
   "dependencies": {
     "@hapi/joi": "^17.1.1",
@@ -32,6 +36,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.4.4",
     "@prisma/client": "^6.19.3",
+    "all": "^0.0.0",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",

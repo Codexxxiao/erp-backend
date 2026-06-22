@@ -27,7 +27,14 @@ export class PermissionsGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const userId = request.user?.userId;
+    if (!userId) {
+      throw new ForbiddenException('未获取到用户身份');
+    }
+
     const user = await this.userService.findUserWithRolesAndPermissions(userId);
+    if (!user) {
+      throw new ForbiddenException('用户不存在');
+    }
 
     // 超级管理员放行
     if (user.roles.some((role) => role.name === 'admin')) {

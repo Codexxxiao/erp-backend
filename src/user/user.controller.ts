@@ -12,11 +12,12 @@ import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtGuard } from '../auth/jwt/jwt.guard';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { AssignRolesDto } from './dto/assign-roles.dto';
 
 @ApiTags('用户管理') // 接口分组标签
 @ApiBearerAuth() // 标记该组接口需要鉴权
@@ -58,5 +59,12 @@ export class UserController {
   @Permissions('user:list')
   findPage() {
     return this.userService.findPage(1, 10);
+  }
+
+  @Post(':id/assign-roles')
+  @ApiOperation({ summary: '给用户分配角色' })
+  @Roles('admin')
+  assignRoles(@Param('id') id: string, @Body() assignRolesDto: AssignRolesDto) {
+    return this.userService.assignRoles(+id, assignRolesDto.roleIds);
   }
 }
