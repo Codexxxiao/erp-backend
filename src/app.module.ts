@@ -11,6 +11,8 @@ import { PermissionModule } from './permission/permission.module';
 import * as Joi from '@hapi/joi';
 import { RequestLogMiddleware } from './common/middleware/request-log.middleware';
 import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
+import { ProductModule } from './product/product.module';
+import { OrderModule } from './order/order.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middlewa
     AuthModule,
     RoleModule,
     PermissionModule,
+    ProductModule,
+    OrderModule,
   ],
   controllers: [AppController],
   providers: [AppService],

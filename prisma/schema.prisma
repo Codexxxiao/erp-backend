@@ -39,3 +39,158 @@ model Permission {
   // 反向关联
   roles       Role[]
 }
+
+
+// ==================== 商品模块 ====================
+model ProductCategory {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  parentId    Int?
+  sort        Int      @default(0)
+  status      Int      @default(1) // 1启用 0禁用
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products    Product[]
+  children    ProductCategory[] @relation("CategoryTree")
+  parent      ProductCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String   // SPU 名称
+  categoryId  Int
+  brand       String?
+  description String?
+  mainImage   String?
+  status      Int      @default(1) // 1上架 0下架
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category    ProductCategory @relation(fields: [categoryId], references: [id])
+  skus        Sku[]
+}
+
+model Sku {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  skuCode     String   @unique // SKU 编码，扫码用
+  specName    String   // 规格名称，如 黑色-均码
+  price       Decimal  // 销售价（SQLite 不支持 @db.Decimal）
+  costPrice   Decimal? // 成本价
+  barcode     String?  // 商品条码
+  status      Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventories   Inventory[]
+  inventoryLogs InventoryLog[]
+  orderItems    OrderItem[]
+}
+
+// ==================== 仓储模块 ====================
+model Warehouse {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  code        String   @unique
+  address     String?
+  manager     String?
+  status      Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  locations InventoryLocation[]
+  orders    Order[]
+}
+
+model InventoryLocation {
+  id          Int      @id @default(autoincrement())
+  warehouseId Int
+  code        String   @unique // 库位编码，如 A-03-02
+  name        String?
+  type        String?  // 正品位/残次品位/退货位
+  createdAt   DateTime @default(now())
+
+  warehouse     Warehouse      @relation(fields: [warehouseId], references: [id])
+  inventories   Inventory[]
+  inventoryLogs InventoryLog[]
+}
+
+model Inventory {
+  id           Int      @id @default(autoincrement())
+  skuId        Int
+  locationId   Int
+  quantity     Int      @default(0) // 可用库存数量
+  updatedAt    DateTime @updatedAt
+
+  sku          Sku              @relation(fields: [skuId], references: [id])
+  location     InventoryLocation @relation(fields: [locationId], references: [id])
+  logs         InventoryLog[]
+
+  @@unique([skuId, locationId]) // 同一个SKU同一个库位唯一
+}
+
+model InventoryLog {
+  id          Int      @id @default(autoincrement())
+  inventoryId Int
+  skuId       Int
+  locationId  Int
+  type        String   // IN 入库 / OUT 出库
+  reason      String   // 业务原因：PURCHASE 采购入库 / ORDER 订单出库 / ADJUST 盘点调整
+  billNo      String?  // 关联单据号，如订单号、采购单号
+  quantity    Int      // 变动数量（正数）
+  beforeQty   Int      // 变动前数量
+  afterQty    Int      // 变动后数量
+  operator    String?  // 操作人
+  remark      String?
+  createdAt   DateTime @default(now())
+
+  inventory Inventory         @relation(fields: [inventoryId], references: [id])
+  sku       Sku               @relation(fields: [skuId], references: [id])
+  location  InventoryLocation @relation(fields: [locationId], references: [id])
+}
+
+// ==================== 订单模块 ====================
+enum OrderStatus {
+  PENDING_PAY    // 待付款
+  PENDING_REVIEW // 待审核
+  PENDING_SHIP   // 待发货
+  SHIPPED        // 已发货
+  COMPLETED      // 已完成
+  REFUNDING      // 售后中
+  CANCELLED      // 已取消
+}
+
+model Order {
+  id             Int         @id @default(autoincrement())
+  orderNo        String      @unique // 订单号
+  status         OrderStatus @default(PENDING_REVIEW)
+  totalAmount    Decimal // 订单总金额
+  receiverName   String      // 收件人
+  receiverPhone  String      // 收件电话
+  receiverAddress String     // 收件地址
+  remark         String?
+  warehouseId    Int         // 发货仓库
+  createdBy      Int?        // 下单人/创建人
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  shippedAt      DateTime?
+  completedAt    DateTime?
+
+  items          OrderItem[]
+  warehouse      Warehouse   @relation(fields: [warehouseId], references: [id])
+}
+
+model OrderItem {
+  id         Int     @id @default(autoincrement())
+  orderId    Int
+  skuId      Int
+  skuName    String  // 快照：下单时的SKU名称
+  price      Decimal // 快照：下单时单价
+  quantity   Int     // 购买数量
+  subtotal   Decimal // 小计
+
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku        Sku     @relation(fields: [skuId], references: [id])
+}
