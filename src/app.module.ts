@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { InventoryModule } from './inventory/inventory.module';
@@ -9,6 +9,8 @@ import { ConfigModule } from '@nestjs/config';
 import { RoleModule } from './role/role.module';
 import { PermissionModule } from './permission/permission.module';
 import * as Joi from '@hapi/joi';
+import { RequestLogMiddleware } from './common/middleware/request-log.middleware';
+import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
 
 @Module({
   imports: [
@@ -40,4 +42,9 @@ import * as Joi from '@hapi/joi';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestLogMiddleware).forRoutes('*');
+    consumer.apply(IpWhitelistMiddleware).forRoutes('*');
+  }
+}

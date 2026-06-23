@@ -5,12 +5,31 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') ?? 3000;
   const env = configService.get<string>('NODE_ENV');
+
+  // 限制 JSON 请求体大小，默认 100kb，这里调整为 1mb
+  app.use(json({ limit: '1mb' }));
+  // 限制表单提交大小，extended: true 支持嵌套对象
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
+
+  // 全局 CORS 配置
+  app.enableCors({
+    // 允许的前端源，生产环境建议指定具体域名，不要用 *
+    origin:
+      configService.get<string>('NODE_ENV') === 'development'
+        ? true // 开发环境允许所有源，方便调试
+        : ['https://your-erp-frontend.com', 'http://localhost:5173'],
+    credentials: true, // 允许携带 Cookie / Authorization 凭证
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 86400, // 预检请求缓存时间，减少OPTIONS请求
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -28,7 +47,7 @@ async function bootstrap() {
 
   const config = new DocumentBuilder()
     .setTitle('ERP 后端接口文档')
-    .setDescription(`金飞平台端 API - ${env} 环境`)
+    .setDescription(`平台端 API - ${env} 环境`)
     .setVersion('1.0')
     .addBearerAuth()
     .build();
