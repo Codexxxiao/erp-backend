@@ -38,6 +38,12 @@ export class UserController {
     return this.userService.findAll();
   }
 
+  // 示例3：角色+权限双重控制
+  @Get('page')
+  findPage() {
+    return this.userService.findPage(1, 10);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.userService.findOne(+id);
@@ -51,14 +57,6 @@ export class UserController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.userService.remove(+id);
-  }
-
-  // 示例3：角色+权限双重控制
-  @Get('page')
-  @Roles('admin', 'editor')
-  @Permissions('user:list')
-  findPage() {
-    return this.userService.findPage(1, 10);
   }
 
   @Post(':id/assign-roles')
