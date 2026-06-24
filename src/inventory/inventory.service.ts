@@ -13,7 +13,13 @@ import { UpdateLocationDto } from './dto/update-location.dto';
 import { StockChangeDto } from './dto/stock-change.dto';
 
 export type InventoryChangeType = 'IN' | 'OUT';
-export type InventoryChangeReason = 'PURCHASE' | 'ORDER' | 'ADJUST';
+// 扩展变动原因类型
+export type InventoryChangeReason =
+  | 'PURCHASE'
+  | 'ORDER'
+  | 'ADJUST'
+  | 'ORDER_CANCEL'
+  | 'REFUND';
 
 @Injectable()
 export class InventoryService {

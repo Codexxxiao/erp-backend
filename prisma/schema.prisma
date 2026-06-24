@@ -86,7 +86,8 @@ model Sku {
   product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
   inventories   Inventory[]
   inventoryLogs InventoryLog[]
-  orderItems    OrderItem[]
+  orderItems         OrderItem[]
+  purchaseOrderItems PurchaseOrderItem[]
 }
 
 // ==================== 仓储模块 ====================
@@ -100,8 +101,9 @@ model Warehouse {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  locations InventoryLocation[]
-  orders    Order[]
+  locations      InventoryLocation[]
+  orders         Order[]
+  purchaseOrders PurchaseOrder[]
 }
 
 model InventoryLocation {
@@ -115,6 +117,7 @@ model InventoryLocation {
   warehouse     Warehouse      @relation(fields: [warehouseId], references: [id])
   inventories   Inventory[]
   inventoryLogs InventoryLog[]
+  orders        Order[]
 }
 
 model Inventory {
@@ -172,14 +175,22 @@ model Order {
   receiverAddress String     // 收件地址
   remark         String?
   warehouseId    Int         // 发货仓库
+  locationId     Int         // 出库库位ID，用于取消/售后回滚库存
   createdBy      Int?        // 下单人/创建人
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
-  shippedAt      DateTime?
-  completedAt    DateTime?
+  shippedAt      DateTime?   // 发货时间
+  completedAt    DateTime?   // 完成时间
+  cancelledAt    DateTime?   // 取消时间
+  cancelReason   String?     // 取消原因
+  refundReason   String?     // 售后原因
+  refundedAt     DateTime?   // 售后完成时间
 
   items          OrderItem[]
   warehouse      Warehouse   @relation(fields: [warehouseId], references: [id])
+  location       InventoryLocation @relation(fields: [locationId], references: [id])
+  logs           OrderLog[]
+  receivables    FinanceReceivable[]
 }
 
 model OrderItem {
@@ -193,4 +204,188 @@ model OrderItem {
 
   order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   sku        Sku     @relation(fields: [skuId], references: [id])
+}
+
+
+// ==================== 采购供应链模块 ====================
+model Supplier {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique // 供应商名称
+  contact     String?  // 联系人
+  phone       String?  // 联系电话
+  address     String?  // 地址
+  remark      String?
+  status      Int      @default(1) // 1启用 0禁用
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+}
+
+enum PurchaseOrderStatus {
+  PENDING_REVIEW  // 待审核
+  APPROVED        // 已审核（待入库）
+  PARTIAL_IN      // 部分入库
+  COMPLETED       // 已完成（全部入库）
+  CANCELLED       // 已取消
+}
+
+model PurchaseOrder {
+  id          Int                 @id @default(autoincrement())
+  orderNo     String              @unique // 采购单号
+  supplierId  Int
+  warehouseId Int
+  locationId  Int                 // 默认入库库位
+  totalAmount Decimal // 采购总金额（SQLite 不支持 @db.Decimal）
+  status      PurchaseOrderStatus @default(PENDING_REVIEW)
+  remark      String?
+  createdBy   Int?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  approvedAt  DateTime?
+  completedAt DateTime?
+
+  supplier    Supplier            @relation(fields: [supplierId], references: [id])
+  warehouse   Warehouse           @relation(fields: [warehouseId], references: [id])
+  items       PurchaseOrderItem[]
+  payables    FinancePayable[]
+}
+
+model PurchaseOrderItem {
+  id         Int     @id @default(autoincrement())
+  orderId    Int
+  skuId      Int
+  skuName    String  // 快照：采购时的SKU名称
+  quantity   Int     // 采购数量
+  price      Decimal // 采购单价
+  subtotal   Decimal // 小计金额
+  inQuantity Int     @default(0) // 已入库数量
+
+  order      PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku        Sku           @relation(fields: [skuId], references: [id])
+}
+
+// ==================== 订单日志 ====================
+enum OrderLogType {
+  CREATE         // 创建订单
+  REVIEW         // 审核通过
+  CANCEL         // 取消订单
+  SHIP           // 订单发货
+  RECEIVE        // 确认收货
+  REFUND_APPLY   // 发起售后
+  REFUND_FINISH  // 完成售后
+  REFUND_CLOSE   // 关闭售后
+  REMARK         // 修改备注
+}
+
+model OrderLog {
+  id           Int           @id @default(autoincrement())
+  orderId      Int           // 关联订单ID
+  type         OrderLogType  // 操作类型
+  operator     String?       // 操作人
+  beforeStatus OrderStatus?  // 操作前状态
+  afterStatus  OrderStatus?  // 操作后状态
+  remark       String?       // 操作备注/原因
+  ip           String?       // 操作IP
+  createdAt    DateTime      @default(now())
+
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId]) // 订单ID加索引，提升查询速度
+}
+
+
+// ==================== 财务模块-应收账款 ====================
+enum ReceivableStatus {
+  PENDING    // 待收款
+  PARTIAL    // 部分收款
+  PAID       // 已结清
+  VOID       // 已作废
+}
+
+model FinanceReceivable {
+  id             Int              @id @default(autoincrement())
+  receivableNo   String           @unique // 应收单号
+  orderId        Int              // 关联订单ID
+  orderNo        String           // 订单号快照
+  customerName   String           // 客户/收件人名称快照
+  totalAmount    Decimal          // 应收总金额
+  receivedAmount Decimal          @default(0) // 已收金额
+  status         ReceivableStatus @default(PENDING)
+  remark         String?
+  createdBy      Int?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  paidAt         DateTime?        // 结清时间
+  voidAt         DateTime?        // 作废时间
+  voidReason     String?          // 作废原因
+
+  order          Order            @relation(fields: [orderId], references: [id])
+  receipts       FinanceReceipt[]
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model FinanceReceipt {
+  id           Int      @id @default(autoincrement())
+  receivableId Int      // 关联应收单ID
+  amount       Decimal  // 本次收款金额
+  payMethod    String   // 收款方式：微信/支付宝/银行转账/现金
+  payNo        String?  // 支付流水号
+  operator     String?  // 操作人
+  remark       String?
+  createdAt    DateTime @default(now())
+
+  receivable   FinanceReceivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+
+  @@index([receivableId])
+}
+
+
+// ==================== 财务模块-应付账款 ====================
+enum PayableStatus {
+  PENDING    // 待付款
+  PARTIAL    // 部分付款
+  PAID       // 已结清
+  VOID       // 已作废
+}
+
+model FinancePayable {
+  id             Int           @id @default(autoincrement())
+  payableNo      String        @unique // 应付单号
+  purchaseOrderId Int          // 关联采购单ID
+  purchaseOrderNo String       // 采购单号快照
+  supplierName   String        // 供应商名称快照
+  totalAmount    Decimal       // 应付总金额
+  paidAmount     Decimal       @default(0) // 已付金额
+  status         PayableStatus @default(PENDING)
+  remark         String?
+  createdBy      Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  paidAt         DateTime?     // 结清时间
+  voidAt         DateTime?     // 作废时间
+  voidReason     String?       // 作废原因
+
+  purchaseOrder  PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  payments       FinancePayment[]
+
+  @@index([purchaseOrderId])
+  @@index([status])
+}
+
+model FinancePayment {
+  id           Int            @id @default(autoincrement())
+  payableId    Int            // 关联应付单ID
+  amount       Decimal        // 本次付款金额
+  payMethod    String         // 付款方式：银行转账/现金/支付宝
+  payNo        String?        // 付款流水号
+  operator     String?        // 操作人
+  remark       String?
+  createdAt    DateTime       @default(now())
+
+  payable      FinancePayable @relation(fields: [payableId], references: [id], onDelete: Cascade)
+
+  @@index([payableId])
 }

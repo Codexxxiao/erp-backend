@@ -13,6 +13,8 @@ import { RequestLogMiddleware } from './common/middleware/request-log.middleware
 import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
 import { ProductModule } from './product/product.module';
 import { OrderModule } from './order/order.module';
+import { PurchaseModule } from './purchase/purchase.module';
+import { FinanceModule } from './finance/finance.module';
 
 @Module({
   imports: [
@@ -42,6 +44,8 @@ import { OrderModule } from './order/order.module';
     PermissionModule,
     ProductModule,
     OrderModule,
+    PurchaseModule,
+    FinanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
