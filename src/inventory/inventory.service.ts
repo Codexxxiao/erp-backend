@@ -19,7 +19,8 @@ export type InventoryChangeReason =
   | 'ORDER'
   | 'ADJUST'
   | 'ORDER_CANCEL'
-  | 'REFUND';
+  | 'REFUND'
+  | 'PURCHASE_RETURN';
 
 @Injectable()
 export class InventoryService {
@@ -97,6 +98,7 @@ export class InventoryService {
       billNo?: string;
       operator?: string;
       remark?: string;
+      unitCost?: number;
     },
   ) {
     const {
@@ -108,6 +110,7 @@ export class InventoryService {
       billNo,
       operator,
       remark,
+      unitCost,
     } = params;
     if (quantity <= 0) throw new BadRequestException('变动数量必须大于0');
 
@@ -157,7 +160,24 @@ export class InventoryService {
       },
     });
 
-    return { beforeQty, afterQty };
+    // 写入流水，携带单位成本
+    await tx.inventoryLog.create({
+      data: {
+        skuId,
+        locationId,
+        type,
+        reason,
+        billNo,
+        quantity,
+        beforeQty,
+        afterQty,
+        operator,
+        remark,
+        unitCost, // 新增：写入单位成本
+      },
+    });
+
+    return { beforeQty, afterQty, unitCost };
   }
 
   // 手动调整库存（接口用，独立事务）

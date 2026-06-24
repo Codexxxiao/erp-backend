@@ -146,4 +146,15 @@ export class OrderController {
   getOrderLogs(@Param('id') id: string) {
     return this.orderService.getOrderLogs(+id);
   }
+
+  @Get('stats/profit')
+  @ApiOperation({ summary: '经营毛利统计' })
+  @ApiQuery({ name: 'startDate', required: false })
+  @ApiQuery({ name: 'endDate', required: false })
+  getProfitStats(
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.orderService.getProfitStats(startDate, endDate);
+  }
 }

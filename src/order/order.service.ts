@@ -62,7 +62,7 @@ export class OrderService {
   /**
    * 创建订单 + 扣减库存（事务原子性）
    */
-  async createOrder(dto: CreateOrderDto, userId?: number) {
+  async createOrder(dto: CreateOrderDto, userId?: number, ip?: string) {
     const { items, warehouseId, locationId, ...baseInfo } = dto;
 
     // 1. 校验SKU有效性
@@ -75,24 +75,37 @@ export class OrderService {
 
     const skuMap = new Map(skuList.map((sku) => [sku.id, sku]));
     let totalAmount = 0;
+    let totalCost = 0;
+
+    // 2. 计算每行明细的售价、成本、毛利
     const orderItemsData = items.map((item) => {
       const sku = skuMap.get(item.skuId)!;
-      const subtotal = Number(sku.price) * item.quantity;
+      const price = Number(sku.price);
+      const subtotal = price * item.quantity;
+      const unitCost = Number(sku.currentCost || 0);
+      const costAmount = unitCost * item.quantity;
+      const profit = subtotal - costAmount;
+
       totalAmount += subtotal;
+      totalCost += costAmount;
+
       return {
         skuId: item.skuId,
         skuName: sku.specName,
-        price: sku.price,
+        price,
         quantity: item.quantity,
         subtotal,
+        costAmount, // 销售成本
+        profit, // 明细毛利
       };
     });
 
     const orderNo = this.generateOrderNo();
+    const totalProfit = totalAmount - totalCost;
 
-    // 2. 开启事务
+    // 3. 开启事务
     const order = await this.prisma.$transaction(async (tx) => {
-      // 2.1 创建订单主表，保存出库库位ID
+      // 3.1 创建订单主表
       const newOrder = await tx.order.create({
         data: {
           orderNo,
@@ -105,13 +118,14 @@ export class OrderService {
         },
       });
 
-      // 2.2 创建订单明细
+      // 3.2 创建订单明细（携带成本与毛利）
       await tx.orderItem.createMany({
         data: orderItemsData.map((item) => ({ orderId: newOrder.id, ...item })),
       });
 
-      // 2.3 逐个扣减库存，写入流水
+      // 3.3 逐个扣减库存，写入流水与单位成本
       for (const item of items) {
+        const sku = skuMap.get(item.skuId)!;
         await this.inventoryService.changeStock(tx, {
           skuId: item.skuId,
           locationId,
@@ -121,23 +135,31 @@ export class OrderService {
           billNo: orderNo,
           operator: userId ? String(userId) : 'system',
           remark: '订单出库',
+          unitCost: Number(sku.currentCost || 0),
         });
       }
 
-      // 写入创建日志
+      // 3.4 写入创建日志
       await this.addLog(tx, {
         orderId: newOrder.id,
         type: OrderLogType.CREATE,
         operator: userId ? String(userId) : 'system',
         afterStatus: OrderStatus.PENDING_REVIEW,
-        remark: '订单创建',
+        remark: `订单创建，销售额：${totalAmount}，成本：${totalCost}，毛利：${totalProfit}`,
         ip,
       });
 
       return newOrder;
     });
 
-    return { orderId: order.id, orderNo, totalAmount, status: order.status };
+    return {
+      orderId: order.id,
+      orderNo,
+      totalAmount,
+      totalCost,
+      totalProfit,
+      status: order.status,
+    };
   }
 
   /**
@@ -226,7 +248,7 @@ export class OrderService {
     ip?: string,
   ) {
     const order = await this.findDetail(id);
-    const allowCancelStatus = [
+    const allowCancelStatus: OrderStatus[] = [
       OrderStatus.PENDING_REVIEW,
       OrderStatus.PENDING_SHIP,
     ];
@@ -250,6 +272,7 @@ export class OrderService {
 
       // 回滚库存
       for (const item of order.items) {
+        const sku = await tx.sku.findUnique({ where: { id: item.skuId } });
         await this.inventoryService.changeStock(tx, {
           skuId: item.skuId,
           locationId: order.locationId,
@@ -259,6 +282,7 @@ export class OrderService {
           billNo: order.orderNo,
           operator,
           remark: '订单取消回滚库存',
+          unitCost: Number(sku?.currentCost || 0),
         });
       }
 
@@ -387,7 +411,10 @@ export class OrderService {
     ip?: string,
   ) {
     const order = await this.findDetail(id);
-    const allowStatus = [OrderStatus.SHIPPED, OrderStatus.COMPLETED];
+    const allowStatus: OrderStatus[] = [
+      OrderStatus.SHIPPED,
+      OrderStatus.COMPLETED,
+    ];
     if (!allowStatus.includes(order.status)) {
       throw new BadRequestException('仅已发货或已完成的订单可发起售后');
     }
@@ -533,5 +560,47 @@ export class OrderService {
       where: { orderId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * 统计指定时间范围内的经营数据
+   */
+  async getProfitStats(startDate?: string, endDate?: string) {
+    const where: Prisma.OrderWhereInput = {
+      status: { not: OrderStatus.CANCELLED },
+    };
+    if (startDate || endDate) {
+      where.createdAt = {
+        ...(startDate ? { gte: new Date(startDate) } : {}),
+        ...(endDate ? { lte: new Date(endDate) } : {}),
+      };
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where,
+      include: { items: true },
+    });
+
+    const orderCount = orders.length;
+    const totalSales = orders.reduce(
+      (sum, o) => sum + Number(o.totalAmount),
+      0,
+    );
+    const totalCost = orders.reduce(
+      (sum, o) => sum + o.items.reduce((s, i) => s + Number(i.costAmount), 0),
+      0,
+    );
+    const totalProfit = totalSales - totalCost;
+    const profitRate =
+      totalSales > 0 ? Math.round((totalProfit / totalSales) * 10000) / 100 : 0;
+
+    return {
+      orderCount,
+      totalSales,
+      totalCost,
+      totalProfit,
+      profitRate, // 毛利率，百分比
+      statRange: { startDate, endDate },
+    };
   }
 }

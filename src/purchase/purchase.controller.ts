@@ -25,6 +25,7 @@ import { PurchaseOrderStatus } from '@prisma/client';
 import { JwtGuard } from '../auth/jwt/jwt.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { PurchaseReturnDto } from './dto/purchase-return.dto';
 
 @ApiTags('采购供应链')
 @ApiBearerAuth()
@@ -104,5 +105,15 @@ export class PurchaseController {
     @Request() req: any,
   ) {
     return this.purchaseService.purchaseIn(+id, dto, req.user?.username);
+  }
+
+  @Post('order/:id/return')
+  @ApiOperation({ summary: '采购退货（扣减库存+回退成本+红字应付）' })
+  purchaseReturn(
+    @Param('id') id: string,
+    @Body() dto: PurchaseReturnDto,
+    @Request() req: any,
+  ) {
+    return this.purchaseService.purchaseReturn(+id, dto, req.user?.username);
   }
 }
