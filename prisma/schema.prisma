@@ -89,6 +89,7 @@ model Sku {
   inventoryLogs InventoryLog[]
   orderItems         OrderItem[]
   purchaseOrderItems PurchaseOrderItem[]
+  purchaseReturnItems PurchaseReturnItem[]
 }
 
 // ==================== 仓储模块 ====================
@@ -105,6 +106,7 @@ model Warehouse {
   locations      InventoryLocation[]
   orders         Order[]
   purchaseOrders PurchaseOrder[]
+  purchaseReturns PurchaseReturn[]
 }
 
 model InventoryLocation {
@@ -119,6 +121,7 @@ model InventoryLocation {
   inventories   Inventory[]
   inventoryLogs InventoryLog[]
   orders        Order[]
+  purchaseReturns PurchaseReturn[]
 }
 
 model Inventory {
@@ -224,6 +227,7 @@ model Supplier {
   updatedAt   DateTime @updatedAt
 
   purchaseOrders PurchaseOrder[]
+  purchaseReturns PurchaseReturn[]
 }
 
 enum PurchaseOrderStatus {
@@ -253,6 +257,7 @@ model PurchaseOrder {
   warehouse   Warehouse           @relation(fields: [warehouseId], references: [id])
   items       PurchaseOrderItem[]
   payables    FinancePayable[]
+  purchaseReturns PurchaseReturn[]
 }
 
 model PurchaseOrderItem {
@@ -267,6 +272,7 @@ model PurchaseOrderItem {
 
   order      PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   sku        Sku           @relation(fields: [skuId], references: [id])
+  purchaseReturnItems PurchaseReturnItem[]
 }
 
 // ==================== 订单日志 ====================
@@ -392,4 +398,55 @@ model FinancePayment {
   payable      FinancePayable @relation(fields: [payableId], references: [id], onDelete: Cascade)
 
   @@index([payableId])
+}
+
+
+// ==================== 采购模块-退货单 ====================
+enum PurchaseReturnStatus {
+  PENDING_REVIEW  // 待审核
+  APPROVED        // 已审核（已出库）
+  VOID            // 已作废
+}
+
+model PurchaseReturn {
+  id              Int                   @id @default(autoincrement())
+  returnNo        String                @unique // 退货单号 RT开头
+  purchaseOrderId Int?                  // 关联原采购单（可选，支持无原单退货）
+  supplierId      Int
+  warehouseId     Int
+  locationId      Int
+  totalAmount     Decimal               // 退货总金额
+  status          PurchaseReturnStatus  @default(PENDING_REVIEW)
+  remark          String?
+  createdBy       Int?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  approvedAt      DateTime?
+  voidAt          DateTime?
+  voidReason      String?
+
+  purchaseOrder   PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id])
+  supplier        Supplier              @relation(fields: [supplierId], references: [id])
+  warehouse       Warehouse             @relation(fields: [warehouseId], references: [id])
+  location        InventoryLocation     @relation(fields: [locationId], references: [id])
+  items           PurchaseReturnItem[]
+
+  @@index([purchaseOrderId])
+  @@index([status])
+  @@index([supplierId])
+}
+
+model PurchaseReturnItem {
+  id                 Int            @id @default(autoincrement())
+  returnId           Int
+  purchaseOrderItemId Int?         // 关联原采购明细（可选，用于追溯）
+  skuId              Int
+  skuName            String         // SKU名称快照
+  quantity           Int            // 退货数量
+  price              Decimal        // 退货单价（原采购价）
+  subtotal           Decimal        // 退货小计
+
+  returnOrder        PurchaseReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  purchaseOrderItem  PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id])
+  sku                Sku            @relation(fields: [skuId], references: [id])
 }

@@ -26,6 +26,8 @@ import { JwtGuard } from '../auth/jwt/jwt.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PurchaseReturnDto } from './dto/purchase-return.dto';
+import { CreatePurchaseReturnDto } from './dto/create-purchase-return.dto';
+import { PurchaseReturnStatus } from '@prisma/client';
 
 @ApiTags('采购供应链')
 @ApiBearerAuth()
@@ -115,5 +117,45 @@ export class PurchaseController {
     @Request() req: any,
   ) {
     return this.purchaseService.purchaseReturn(+id, dto, req.user?.username);
+  }
+
+  // ========== 独立退货单接口 ==========
+  @Post('return')
+  @ApiOperation({ summary: '创建采购退货单（待审核）' })
+  createReturn(@Body() dto: CreatePurchaseReturnDto, @Request() req: any) {
+    return this.purchaseService.createReturn(dto, req.user?.userId);
+  }
+
+  @Get('return')
+  @ApiOperation({ summary: '分页查询退货单' })
+  @ApiQuery({ name: 'status', required: false, enum: PurchaseReturnStatus })
+  findReturnList(
+    @Query('page') page = '1',
+    @Query('pageSize') pageSize = '10',
+    @Query('status') status?: PurchaseReturnStatus,
+  ) {
+    return this.purchaseService.findReturnList(+page, +pageSize, status);
+  }
+
+  @Get('return/:id')
+  @ApiOperation({ summary: '退货单详情' })
+  findReturnDetail(@Param('id') id: string) {
+    return this.purchaseService.findReturnDetail(+id);
+  }
+
+  @Patch('return/:id/approve')
+  @ApiOperation({ summary: '审核退货单（自动出库+回退成本+红字应付）' })
+  approveReturn(@Param('id') id: string, @Request() req: any) {
+    return this.purchaseService.approveReturn(+id, req.user?.username);
+  }
+
+  @Patch('return/:id/void')
+  @ApiOperation({ summary: '作废退货单' })
+  voidReturn(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @Request() req: any,
+  ) {
+    return this.purchaseService.voidReturn(+id, reason, req.user?.username);
   }
 }
