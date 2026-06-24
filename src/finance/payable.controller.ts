@@ -18,7 +18,7 @@ import { PayableService } from './payable.service';
 import { CreatePayableDto } from './dto/create-payable.dto';
 import { PaymentDto } from './dto/payment.dto';
 import { PayableStatus } from '@prisma/client';
-import { JwtGuard } from '../auth/jwt.guard';
+import { JwtGuard } from '../auth/jwt/jwt.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 

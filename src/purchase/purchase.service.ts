@@ -13,6 +13,7 @@ import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { PurchaseInDto } from './dto/purchase-in.dto';
 import { PayableService } from '../finance/payable.service';
 import { PurchaseReturnDto } from './dto/purchase-return.dto';
+import { CreatePurchaseReturnDto } from './dto/create-purchase-return.dto';
 import { PurchaseReturnStatus } from '@prisma/client';
 
 @Injectable()
@@ -205,11 +206,11 @@ export class PurchaseService {
   async purchaseIn(orderId: number, dto: PurchaseInDto, operator?: string) {
     const order = await this.findPurchaseDetail(orderId);
 
-    if (
-      ![PurchaseOrderStatus.APPROVED, PurchaseOrderStatus.PARTIAL_IN].includes(
-        order.status,
-      )
-    ) {
+    const allowInStatus: PurchaseOrderStatus[] = [
+      PurchaseOrderStatus.APPROVED,
+      PurchaseOrderStatus.PARTIAL_IN,
+    ];
+    if (!allowInStatus.includes(order.status)) {
       throw new BadRequestException('当前状态不可入库');
     }
 
@@ -344,7 +345,7 @@ export class PurchaseService {
     const order = await this.findPurchaseDetail(orderId);
 
     // 1. 状态校验：仅部分入库、已完成的采购单可退货
-    const allowReturnStatus = [
+    const allowReturnStatus: PurchaseOrderStatus[] = [
       PurchaseOrderStatus.PARTIAL_IN,
       PurchaseOrderStatus.COMPLETED,
     ];
@@ -451,8 +452,7 @@ export class PurchaseService {
         where: { id: orderId },
         data: {
           status: newStatus,
-          completedAt:
-            newStatus === PurchaseOrderStatus.COMPLETED ? new Date() : null,
+          completedAt: null,
         },
         include: { items: true, supplier: true },
       });

@@ -130,8 +130,8 @@ export class OrderController {
   @ApiOperation({ summary: '关闭/驳回售后' })
   closeRefund(
     @Param('id') id: string,
-    @Body('remark') remark?: string,
     @Request() req: any,
+    @Body('remark') remark?: string,
   ) {
     return this.orderService.closeRefund(
       +id,

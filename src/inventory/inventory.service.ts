@@ -143,7 +143,6 @@ export class InventoryService {
       data: { quantity: afterQty },
     });
 
-    // 写入流水
     await tx.inventoryLog.create({
       data: {
         inventoryId: inventory.id,
@@ -157,23 +156,7 @@ export class InventoryService {
         afterQty,
         operator,
         remark,
-      },
-    });
-
-    // 写入流水，携带单位成本
-    await tx.inventoryLog.create({
-      data: {
-        skuId,
-        locationId,
-        type,
-        reason,
-        billNo,
-        quantity,
-        beforeQty,
-        afterQty,
-        operator,
-        remark,
-        unitCost, // 新增：写入单位成本
+        unitCost,
       },
     });
 

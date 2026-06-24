@@ -108,7 +108,10 @@ export class PayableService {
     const payable = await this.findPayableDetail(id);
 
     // 状态校验
-    const allowStatus = [PayableStatus.PENDING, PayableStatus.PARTIAL];
+    const allowStatus: PayableStatus[] = [
+      PayableStatus.PENDING,
+      PayableStatus.PARTIAL,
+    ];
     if (!allowStatus.includes(payable.status)) {
       throw new BadRequestException('当前应付单状态不可付款');
     }

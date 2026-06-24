@@ -18,7 +18,7 @@ import { FinanceService } from './finance.service';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { ReceiptDto } from './dto/receipt.dto';
 import { ReceivableStatus } from '@prisma/client';
-import { JwtGuard } from '../auth/jwt.guard';
+import { JwtGuard } from '../auth/jwt/jwt.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 

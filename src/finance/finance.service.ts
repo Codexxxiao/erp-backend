@@ -105,7 +105,10 @@ export class FinanceService {
     const receivable = await this.findReceivableDetail(id);
 
     // 状态校验：仅待收款、部分收款可收款
-    const allowStatus = [ReceivableStatus.PENDING, ReceivableStatus.PARTIAL];
+    const allowStatus: ReceivableStatus[] = [
+      ReceivableStatus.PENDING,
+      ReceivableStatus.PARTIAL,
+    ];
     if (!allowStatus.includes(receivable.status)) {
       throw new BadRequestException('当前应收单状态不可收款');
     }
