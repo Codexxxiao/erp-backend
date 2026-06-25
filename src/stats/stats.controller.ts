@@ -40,7 +40,7 @@ export class StatsController {
   })
   @UseInterceptors(CacheInterceptor) // 启用自动缓存
   @CacheKey(STATS_OVERVIEW_CACHE_KEY)
-  @CacheTTL(300_000) // 单独设置过期时间（秒）
+  @CacheTTL(300_000) // 5 分钟（单位：毫秒）
   getOverview(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,

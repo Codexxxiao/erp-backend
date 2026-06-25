@@ -20,6 +20,12 @@ import { ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { createKeyv } from '@keyv/redis';
 
+const REDIS_KEY_PREFIX_BY_ENV: Record<string, string> = {
+  development: 'erp:dev',
+  test: 'erp:test',
+  production: 'erp:prod',
+};
+
 function buildRedisUrl(configService: ConfigService): string {
   const host = configService.get<string>('REDIS_HOST') ?? 'localhost';
   const port = configService.get<number>('REDIS_PORT') ?? 6379;
@@ -29,6 +35,15 @@ function buildRedisUrl(configService: ConfigService): string {
     return `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
   }
   return `redis://${host}:${port}/${db}`;
+}
+
+function resolveRedisKeyPrefix(configService: ConfigService): string {
+  const explicit = configService.get<string>('REDIS_KEY_PREFIX');
+  if (explicit) {
+    return explicit;
+  }
+  const nodeEnv = configService.get<string>('NODE_ENV') ?? 'development';
+  return REDIS_KEY_PREFIX_BY_ENV[nodeEnv] ?? 'erp';
 }
 
 @Module({
@@ -46,6 +61,12 @@ function buildRedisUrl(configService: ConfigService): string {
         JWT_SECRET: Joi.string().required(), // 必填，缺失则启动失败
         JWT_EXPIRES_IN: Joi.string().default('2h'),
         DATABASE_URL: Joi.string().required(),
+        REDIS_HOST: Joi.string().default('localhost'),
+        REDIS_PORT: Joi.number().default(6379),
+        REDIS_PASSWORD: Joi.string().allow('').optional(),
+        REDIS_DB: Joi.number().default(0),
+        REDIS_DEFAULT_TTL: Joi.number().default(300),
+        REDIS_KEY_PREFIX: Joi.string().optional(),
       }),
       validationOptions: {
         abortEarly: false, // 一次性列出所有错误，而非遇到第一个就终止
@@ -67,8 +88,7 @@ function buildRedisUrl(configService: ConfigService): string {
       useFactory: (configService: ConfigService) => {
         const ttlSeconds =
           configService.get<number>('REDIS_DEFAULT_TTL') || 300;
-        const keyPrefix =
-          configService.get<string>('REDIS_KEY_PREFIX') || 'erp';
+        const keyPrefix = resolveRedisKeyPrefix(configService);
         return {
           stores: [
             createKeyv(buildRedisUrl(configService), {
