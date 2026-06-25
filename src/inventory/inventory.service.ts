@@ -11,6 +11,9 @@ import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { StockChangeDto } from './dto/stock-change.dto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { Inject } from '@nestjs/common';
 
 export type InventoryChangeType = 'IN' | 'OUT';
 // 扩展变动原因类型
@@ -24,7 +27,15 @@ export type InventoryChangeReason =
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) {}
+
+  private async clearStatsCache() {
+    const keys = await this.cacheManager.store.keys('stats:overview*');
+    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
+  }
 
   // ========== 仓库管理 ==========
   async createWarehouse(dto: CreateWarehouseDto) {
@@ -165,13 +176,15 @@ export class InventoryService {
 
   // 手动调整库存（接口用，独立事务）
   async manualChangeStock(dto: StockChangeDto, operator?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       return this.changeStock(tx, {
         ...dto,
         reason: dto.reason as InventoryChangeReason,
         operator,
       });
     });
+    await this.clearStatsCache();
+    return result;
   }
 
   // ========== 库存查询 ==========

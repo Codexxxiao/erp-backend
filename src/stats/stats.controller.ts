@@ -1,4 +1,10 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -9,6 +15,7 @@ import { StatsService } from './stats.service';
 import { JwtGuard } from '../auth/jwt/jwt.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 
 @ApiTags('经营数据看板')
 @ApiBearerAuth()
@@ -30,6 +37,9 @@ export class StatsController {
     required: false,
     description: '结束日期 YYYY-MM-DD',
   })
+  @UseInterceptors(CacheInterceptor) // 启用自动缓存
+  @CacheKey('stats:overview') // 缓存键前缀
+  @CacheTTL(300) // 单独设置过期时间（秒）
   getOverview(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,

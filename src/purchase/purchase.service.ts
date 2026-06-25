@@ -15,6 +15,9 @@ import { PayableService } from '../finance/payable.service';
 import { PurchaseReturnDto } from './dto/purchase-return.dto';
 import { CreatePurchaseReturnDto } from './dto/create-purchase-return.dto';
 import { PurchaseReturnStatus } from '@prisma/client';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { Inject } from '@nestjs/common';
 
 @Injectable()
 export class PurchaseService {
@@ -22,7 +25,13 @@ export class PurchaseService {
     private readonly prisma: PrismaService,
     private readonly inventoryService: InventoryService,
     private readonly payableService: PayableService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
+
+  private async clearStatsCache() {
+    const keys = await this.cacheManager.store.keys('stats:overview*');
+    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
+  }
 
   // 生成采购单号
   private generateOrderNo() {
@@ -324,6 +333,8 @@ export class PurchaseService {
 
       return updatedOrder;
     });
+
+    await this.clearStatsCache();
 
     return {
       orderId: result.id,
@@ -686,6 +697,8 @@ export class PurchaseService {
 
       return approved;
     });
+
+    await this.clearStatsCache();
 
     return {
       returnId: result.id,

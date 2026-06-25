@@ -14,6 +14,9 @@ import { ConfirmReceiveDto } from './dto/confirm-receive.dto';
 import { ApplyRefundDto } from './dto/apply-refund.dto';
 import { FinishRefundDto } from './dto/finish-refund.dto';
 import { FinanceService } from '../finance/finance.service';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { Inject } from '@nestjs/common';
 
 @Injectable()
 export class OrderService {
@@ -21,6 +24,7 @@ export class OrderService {
     private readonly prisma: PrismaService,
     private readonly inventoryService: InventoryService,
     private readonly financeService: FinanceService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache, // 注入缓存管理器
   ) {}
 
   // 生成订单号
@@ -28,6 +32,13 @@ export class OrderService {
     return `SO${Date.now()}${Math.floor(Math.random() * 1000)
       .toString()
       .padStart(3, '0')}`;
+  }
+
+  // 私有方法：清除所有看板相关缓存
+  private async clearStatsCache() {
+    // 模糊匹配删除所有 stats:overview 开头的缓存
+    const keys = await this.cacheManager.store.keys('stats:overview*');
+    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
   }
 
   /**
@@ -151,6 +162,8 @@ export class OrderService {
 
       return newOrder;
     });
+
+    await this.clearStatsCache();
 
     return {
       orderId: order.id,
