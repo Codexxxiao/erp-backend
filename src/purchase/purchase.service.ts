@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -17,7 +18,7 @@ import { CreatePurchaseReturnDto } from './dto/create-purchase-return.dto';
 import { PurchaseReturnStatus } from '@prisma/client';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
-import { Inject } from '@nestjs/common';
+import { STATS_OVERVIEW_CACHE_KEY } from '../common/constants/cache-keys';
 
 @Injectable()
 export class PurchaseService {
@@ -29,8 +30,7 @@ export class PurchaseService {
   ) {}
 
   private async clearStatsCache() {
-    const keys = await this.cacheManager.store.keys('stats:overview*');
-    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
+    await this.cacheManager.del(STATS_OVERVIEW_CACHE_KEY);
   }
 
   // 生成采购单号

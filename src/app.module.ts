@@ -16,9 +16,20 @@ import { OrderModule } from './order/order.module';
 import { PurchaseModule } from './purchase/purchase.module';
 import { FinanceModule } from './finance/finance.module';
 import { StatsModule } from './stats/stats.module';
-import { redisStore } from 'cache-manager-redis-store';
 import { ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
+import { createKeyv } from '@keyv/redis';
+
+function buildRedisUrl(configService: ConfigService): string {
+  const host = configService.get<string>('REDIS_HOST') ?? 'localhost';
+  const port = configService.get<number>('REDIS_PORT') ?? 6379;
+  const password = configService.get<string>('REDIS_PASSWORD');
+  const db = configService.get<number>('REDIS_DB') ?? 0;
+  if (password) {
+    return `redis://:${encodeURIComponent(password)}@${host}:${port}/${db}`;
+  }
+  return `redis://${host}:${port}/${db}`;
+}
 
 @Module({
   imports: [
@@ -51,17 +62,22 @@ import { CacheModule } from '@nestjs/cache-manager';
     PurchaseModule,
     FinanceModule,
     CacheModule.registerAsync({
-      isGlobal: true, // 全局生效，所有模块直接用
+      isGlobal: true,
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        store: redisStore as any,
-        host: configService.get<string>('REDIS_HOST'),
-        port: configService.get<number>('REDIS_PORT'),
-        password: configService.get<string>('REDIS_PASSWORD') || undefined,
-        db: configService.get<number>('REDIS_DB') || 0,
-        ttl: configService.get<number>('REDIS_DEFAULT_TTL') || 300,
-        keyPrefix: configService.get<string>('REDIS_KEY_PREFIX') || 'erp',
-      }),
+      useFactory: (configService: ConfigService) => {
+        const ttlSeconds =
+          configService.get<number>('REDIS_DEFAULT_TTL') || 300;
+        const keyPrefix =
+          configService.get<string>('REDIS_KEY_PREFIX') || 'erp';
+        return {
+          stores: [
+            createKeyv(buildRedisUrl(configService), {
+              namespace: keyPrefix,
+            }),
+          ],
+          ttl: ttlSeconds * 1000,
+        };
+      },
     }),
     StatsModule,
   ],

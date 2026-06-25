@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
@@ -13,7 +14,7 @@ import { UpdateLocationDto } from './dto/update-location.dto';
 import { StockChangeDto } from './dto/stock-change.dto';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
-import { Inject } from '@nestjs/common';
+import { STATS_OVERVIEW_CACHE_KEY } from '../common/constants/cache-keys';
 
 export type InventoryChangeType = 'IN' | 'OUT';
 // 扩展变动原因类型
@@ -33,8 +34,7 @@ export class InventoryService {
   ) {}
 
   private async clearStatsCache() {
-    const keys = await this.cacheManager.store.keys('stats:overview*');
-    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
+    await this.cacheManager.del(STATS_OVERVIEW_CACHE_KEY);
   }
 
   // ========== 仓库管理 ==========

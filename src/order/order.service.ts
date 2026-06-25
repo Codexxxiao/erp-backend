@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -16,7 +17,7 @@ import { FinishRefundDto } from './dto/finish-refund.dto';
 import { FinanceService } from '../finance/finance.service';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
-import { Inject } from '@nestjs/common';
+import { STATS_OVERVIEW_CACHE_KEY } from '../common/constants/cache-keys';
 
 @Injectable()
 export class OrderService {
@@ -34,11 +35,8 @@ export class OrderService {
       .padStart(3, '0')}`;
   }
 
-  // 私有方法：清除所有看板相关缓存
   private async clearStatsCache() {
-    // 模糊匹配删除所有 stats:overview 开头的缓存
-    const keys = await this.cacheManager.store.keys('stats:overview*');
-    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
+    await this.cacheManager.del(STATS_OVERVIEW_CACHE_KEY);
   }
 
   /**
