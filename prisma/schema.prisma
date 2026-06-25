@@ -342,7 +342,7 @@ model FinanceReceipt {
   receivableId Int      // 关联应收单ID
   amount       Decimal  // 本次收款金额
   payMethod    String   // 收款方式：微信/支付宝/银行转账/现金
-  payNo        String?  // 支付流水号
+  payNo        String?   @unique // 支付流水号
   operator     String?  // 操作人
   remark       String?
   createdAt    DateTime @default(now())
@@ -390,7 +390,7 @@ model FinancePayment {
   payableId    Int            // 关联应付单ID
   amount       Decimal        // 本次付款金额
   payMethod    String         // 付款方式：银行转账/现金/支付宝
-  payNo        String?        // 付款流水号
+  payNo        String?         @unique // 付款流水号
   operator     String?        // 操作人
   remark       String?
   createdAt    DateTime       @default(now())

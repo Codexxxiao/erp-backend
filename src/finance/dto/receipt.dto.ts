@@ -18,10 +18,13 @@ export class ReceiptDto {
   @IsNotEmpty()
   payMethod: string;
 
-  @ApiProperty({ description: '支付流水号', required: false })
-  @IsOptional()
+  @ApiProperty({
+    description: '支付流水号（幂等键，全局唯一；现金可传 UUID）',
+    example: 'WX202606250001',
+  })
   @IsString()
-  payNo?: string;
+  @IsNotEmpty()
+  payNo: string;
 
   @ApiProperty({ required: false })
   @IsOptional()

@@ -2,17 +2,25 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, ReceivableStatus } from '@prisma/client';
-import { CreateReceivableDto } from './dto/create-receivable.dto';
+import {
+  Prisma,
+  ReceivableStatus,
+  FinanceReceivable,
+  FinanceReceipt,
+} from '@prisma/client';
 import { ReceiptDto } from './dto/receipt.dto';
+import {
+  RECEIVABLE_RECEIPTABLE_STATUSES,
+  RECEIVABLE_VOIDABLE_STATUSES,
+} from './constants/finance-status';
 
 @Injectable()
 export class FinanceService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 生成应收单号
   private generateReceivableNo() {
     return `AR${Date.now()}${Math.floor(Math.random() * 1000)
       .toString()
@@ -20,7 +28,7 @@ export class FinanceService {
   }
 
   /**
-   * 创建应收单（支持外部事务，供订单发货联动调用）
+   * 创建应收单（支持外部事务；同一订单仅一张有效应收）
    */
   async createReceivable(
     params: {
@@ -34,6 +42,17 @@ export class FinanceService {
     tx?: Prisma.TransactionClient,
   ) {
     const executor = tx || this.prisma;
+
+    const existing = await executor.financeReceivable.findFirst({
+      where: {
+        orderId: params.orderId,
+        status: { not: ReceivableStatus.VOID },
+      },
+    });
+    if (existing) {
+      return existing;
+    }
+
     const receivableNo = this.generateReceivableNo();
 
     return executor.financeReceivable.create({
@@ -50,16 +69,13 @@ export class FinanceService {
     });
   }
 
-  /**
-   * 分页查询应收单列表
-   */
   async findReceivableList(
     page = 1,
     pageSize = 10,
     status?: ReceivableStatus,
     keyword?: string,
   ) {
-    const where: any = {};
+    const where: Prisma.FinanceReceivableWhereInput = {};
     if (status) where.status = status;
     if (keyword) {
       where.OR = [
@@ -83,9 +99,6 @@ export class FinanceService {
     return { list, total, page, pageSize };
   }
 
-  /**
-   * 查询应收单详情（含收款记录）
-   */
   async findReceivableDetail(id: number) {
     const receivable = await this.prisma.financeReceivable.findUnique({
       where: { id },
@@ -96,65 +109,153 @@ export class FinanceService {
   }
 
   /**
-   * 收款核销（事务原子性）
-   * 1. 校验应收单状态与剩余金额
-   * 2. 写入收款记录
-   * 3. 更新应收单已收金额与状态
+   * 收款核销：事务内状态机 + payNo 幂等 + 乐观锁更新
    */
   async receipt(id: number, dto: ReceiptDto, operator?: string) {
-    const receivable = await this.findReceivableDetail(id);
+    await this.findReceivableDetail(id);
 
-    // 状态校验：仅待收款、部分收款可收款
-    const allowStatus: ReceivableStatus[] = [
-      ReceivableStatus.PENDING,
-      ReceivableStatus.PARTIAL,
-    ];
-    if (!allowStatus.includes(receivable.status)) {
-      throw new BadRequestException('当前应收单状态不可收款');
+    const result = await this.prisma.$transaction(async (tx) => {
+      const fresh = await tx.financeReceivable.findUnique({ where: { id } });
+      if (!fresh) throw new NotFoundException('应收单不存在');
+
+      this.assertReceivableReceiptable(fresh);
+      this.assertReceiptAmount(fresh, dto.amount);
+
+      if (dto.payNo) {
+        const existingReceipt = await tx.financeReceipt.findUnique({
+          where: { payNo: dto.payNo },
+        });
+        if (existingReceipt) {
+          this.assertReceiptIdempotent(existingReceipt, id, dto.amount);
+          return tx.financeReceivable.findUniqueOrThrow({ where: { id } });
+        }
+      }
+
+      try {
+        await tx.financeReceipt.create({
+          data: {
+            receivableId: id,
+            amount: dto.amount,
+            payMethod: dto.payMethod,
+            payNo: dto.payNo,
+            operator,
+            remark: dto.remark,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002' &&
+          dto.payNo
+        ) {
+          const existingReceipt = await tx.financeReceipt.findUnique({
+            where: { payNo: dto.payNo },
+          });
+          if (existingReceipt) {
+            this.assertReceiptIdempotent(existingReceipt, id, dto.amount);
+            return tx.financeReceivable.findUniqueOrThrow({ where: { id } });
+          }
+        }
+        throw error;
+      }
+
+      await this.applyReceivableReceipt(tx, fresh, dto.amount);
+      return tx.financeReceivable.findUniqueOrThrow({ where: { id } });
+    });
+
+    return this.buildReceiptResponse(result);
+  }
+
+  async voidReceivable(id: number, reason: string, operator?: string) {
+    await this.findReceivableDetail(id);
+
+    const { count } = await this.prisma.financeReceivable.updateMany({
+      where: {
+        id,
+        status: { in: RECEIVABLE_VOIDABLE_STATUSES },
+      },
+      data: {
+        status: ReceivableStatus.VOID,
+        voidAt: new Date(),
+        voidReason: reason,
+        remark: `作废操作人：${operator || 'system'}`,
+      },
+    });
+
+    if (count === 0) {
+      throw new BadRequestException('当前应收单状态不可作废');
     }
 
-    // 计算剩余未收金额
+    return this.findReceivableDetail(id);
+  }
+
+  async getReceiptsByReceivableId(receivableId: number) {
+    await this.findReceivableDetail(receivableId);
+    return this.prisma.financeReceipt.findMany({
+      where: { receivableId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private assertReceivableReceiptable(receivable: FinanceReceivable) {
+    if (!RECEIVABLE_RECEIPTABLE_STATUSES.includes(receivable.status)) {
+      throw new BadRequestException('当前应收单状态不可收款');
+    }
+  }
+
+  private assertReceiptAmount(receivable: FinanceReceivable, amount: number) {
     const remainAmount =
       Number(receivable.totalAmount) - Number(receivable.receivedAmount);
-    if (dto.amount > remainAmount) {
+    if (amount > remainAmount) {
       throw new BadRequestException(
         `收款金额不能超过剩余应收金额 ${remainAmount}`,
       );
     }
+  }
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      // 1. 写入收款记录
-      await tx.financeReceipt.create({
-        data: {
-          receivableId: id,
-          amount: dto.amount,
-          payMethod: dto.payMethod,
-          payNo: dto.payNo,
-          operator,
-          remark: dto.remark,
-        },
-      });
+  private assertReceiptIdempotent(
+    existing: FinanceReceipt,
+    receivableId: number,
+    amount: number,
+  ) {
+    if (existing.receivableId !== receivableId) {
+      throw new ConflictException('支付流水号已被其他应收单使用');
+    }
+    if (Number(existing.amount) !== amount) {
+      throw new ConflictException('相同流水号的收款金额与本次请求不一致');
+    }
+  }
 
-      // 2. 计算新的已收金额和状态
-      const newReceived = Number(receivable.receivedAmount) + dto.amount;
-      const isFullPaid = newReceived >= Number(receivable.totalAmount);
-      const newStatus = isFullPaid
-        ? ReceivableStatus.PAID
-        : ReceivableStatus.PARTIAL;
+  private async applyReceivableReceipt(
+    tx: Prisma.TransactionClient,
+    fresh: FinanceReceivable,
+    amount: number,
+  ) {
+    const newReceived = Number(fresh.receivedAmount) + amount;
+    const isFullPaid = newReceived >= Number(fresh.totalAmount);
+    const newStatus = isFullPaid
+      ? ReceivableStatus.PAID
+      : ReceivableStatus.PARTIAL;
 
-      // 3. 更新应收单
-      const updated = await tx.financeReceivable.update({
-        where: { id },
-        data: {
-          receivedAmount: newReceived,
-          status: newStatus,
-          paidAt: isFullPaid ? new Date() : null,
-        },
-      });
-
-      return updated;
+    const { count } = await tx.financeReceivable.updateMany({
+      where: {
+        id: fresh.id,
+        status: { in: RECEIVABLE_RECEIPTABLE_STATUSES },
+        receivedAmount: fresh.receivedAmount,
+      },
+      data: {
+        receivedAmount: newReceived,
+        status: newStatus,
+        paidAt: isFullPaid ? new Date() : null,
+      },
     });
 
+    if (count === 0) {
+      throw new ConflictException('应收单已被其他操作更新，请刷新后重试');
+    }
+  }
+
+  private buildReceiptResponse(result: FinanceReceivable) {
     return {
       receivableId: result.id,
       receivableNo: result.receivableNo,
@@ -162,40 +263,5 @@ export class FinanceService {
       receivedAmount: result.receivedAmount,
       message: '收款成功',
     };
-  }
-
-  /**
-   * 作废应收单
-   */
-  async voidReceivable(id: number, reason: string, operator?: string) {
-    const receivable = await this.findReceivableDetail(id);
-
-    if (receivable.status === ReceivableStatus.VOID) {
-      throw new BadRequestException('应收单已作废，不可重复操作');
-    }
-    if (receivable.status === ReceivableStatus.PAID) {
-      throw new BadRequestException('已结清的应收单不可作废，请先做退款处理');
-    }
-
-    return this.prisma.financeReceivable.update({
-      where: { id },
-      data: {
-        status: ReceivableStatus.VOID,
-        voidAt: new Date(),
-        voidReason: reason,
-        remark: `${receivable.remark || ''} | 作废操作人：${operator || 'system'}`,
-      },
-    });
-  }
-
-  /**
-   * 查询应收单下的所有收款记录
-   */
-  async getReceiptsByReceivableId(receivableId: number) {
-    await this.findReceivableDetail(receivableId);
-    return this.prisma.financeReceipt.findMany({
-      where: { receivableId },
-      orderBy: { createdAt: 'desc' },
-    });
   }
 }
